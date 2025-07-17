@@ -86,6 +86,15 @@ WEB_CONCURRENCY=1
 CACHE_TIMEOUT=600
 ```
 
+### GHI vs Generation Plots
+
+If the "Generation vs GHI" scatter plots are not working:
+
+1. **Check data columns**: These plots require `generation_mw`, `shortwave_radiation`, and `temperature_2m` columns
+2. **Monitor logs**: Enhanced error messages will show exactly what's missing
+3. **Increase data points**: Set `MAX_DATA_POINTS=10000` for better scatter plot quality
+4. **See debugging guide**: Check `GHI_PLOT_DEBUG.md` for detailed troubleshooting
+
 ### Data Structure
 
 The application expects data in the following structure:
