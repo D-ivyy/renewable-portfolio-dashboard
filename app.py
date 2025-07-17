@@ -11,8 +11,54 @@ from scipy.stats import gaussian_kde
 import warnings
 import base64
 import io
+import functools
+import time
 from typing import Optional, List, Dict, Any
 warnings.filterwarnings('ignore')
+
+# Performance optimization settings
+MAX_DATA_POINTS = 5000  # Limit data points for performance
+CACHE_TIMEOUT = 300  # Cache for 5 minutes
+
+# Simple cache implementation
+_cache = {}
+_cache_times = {}
+
+def simple_cache(timeout=CACHE_TIMEOUT):
+    """Simple caching decorator with timeout"""
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            # Create cache key from function name and arguments
+            cache_key = f"{func.__name__}_{hash(str(args) + str(sorted(kwargs.items())))}"
+            current_time = time.time()
+            
+            # Check if cached result exists and is not expired
+            if (cache_key in _cache and 
+                cache_key in _cache_times and 
+                current_time - _cache_times[cache_key] < timeout):
+                return _cache[cache_key]
+            
+            # Execute function and cache result
+            result = func(*args, **kwargs)
+            _cache[cache_key] = result
+            _cache_times[cache_key] = current_time
+            
+            # Clean old cache entries (simple cleanup)
+            if len(_cache) > 50:  # Limit cache size
+                oldest_key = min(_cache_times.keys(), key=lambda k: _cache_times[k])
+                del _cache[oldest_key]
+                del _cache_times[oldest_key]
+            
+            return result
+        return wrapper
+    return decorator
+
+def sample_data(df, max_points=MAX_DATA_POINTS):
+    """Sample data if it's too large for performance"""
+    if len(df) > max_points:
+        return df.sample(n=max_points, random_state=42).sort_index()
+    return df
 
 # Initialize Dash app with modern theme
 app = dash.Dash(__name__, 
@@ -102,40 +148,38 @@ class RenewablePortfolioDashboard:
         clean_name = clean_name.replace('_', ' ').title()
         return clean_name
     
+    @simple_cache(timeout=600)  # Cache for 10 minutes
     def get_available_files(self, site_name: str) -> List[Dict[str, Any]]:
         """Get all available files for a site with caching - now looks for parquet files"""
-        cache_key = f"{site_name}_files"
-        if cache_key not in self._files_cache:
-            site_path = self.portfolio_path / site_name
-            files_info = []
-            
-            # Define the structure to check
-            folders = {
-                'Generation': ['forecast/distribution', 'forecast/timeseries', 'historical'],
-                'Price_da': ['forecast/distribution', 'forecast/timeseries', 'historical'],
-                'Price_rt': ['forecast/distribution', 'forecast/timeseries', 'historical'],
-                'Revenue_da': ['forecast/distribution', 'forecast/timeseries', 'historical'],
-                'Revenue_rt': ['forecast/distribution', 'forecast/timeseries', 'historical']
-            }
-            
-            for main_folder, subfolders in folders.items():
-                main_path = site_path / main_folder
-                if main_path.exists():
-                    for subfolder in subfolders:
-                        sub_path = main_path / subfolder
-                        if sub_path.exists():
-                            # Look for parquet files instead of csv
-                            for file in sub_path.glob('*.parquet'):
-                                files_info.append({
-                                    'metric': main_folder,
-                                    'type': subfolder.split('/')[-1],
-                                    'file': file.name,
-                                    'path': str(file),
-                                    'size': f"{file.stat().st_size / 1024:.1f} KB"
-                                })
-            
-            self._files_cache[cache_key] = files_info
-        return self._files_cache[cache_key]
+        site_path = self.portfolio_path / site_name
+        files_info = []
+        
+        # Define the structure to check
+        folders = {
+            'Generation': ['forecast/distribution', 'forecast/timeseries', 'historical'],
+            'Price_da': ['forecast/distribution', 'forecast/timeseries', 'historical'],
+            'Price_rt': ['forecast/distribution', 'forecast/timeseries', 'historical'],
+            'Revenue_da': ['forecast/distribution', 'forecast/timeseries', 'historical'],
+            'Revenue_rt': ['forecast/distribution', 'forecast/timeseries', 'historical']
+        }
+        
+        for main_folder, subfolders in folders.items():
+            main_path = site_path / main_folder
+            if main_path.exists():
+                for subfolder in subfolders:
+                    sub_path = main_path / subfolder
+                    if sub_path.exists():
+                        # Look for parquet files instead of csv
+                        for file in sub_path.glob('*.parquet'):
+                            files_info.append({
+                                'metric': main_folder,
+                                'type': subfolder.split('/')[-1],
+                                'file': file.name,
+                                'path': str(file),
+                                'size': f"{file.stat().st_size / 1024:.1f} KB"
+                            })
+        
+        return files_info
     
     def find_distribution_file(self, site_name: str, metric_type: str, temporal: str) -> Optional[Path]:
         """Find distribution file - now looks for parquet files"""
@@ -860,9 +904,17 @@ def update_plot_type_buttons(current_type, button_ids, current_tab):
      Input('site-dropdown', 'value'),
      Input('price-type', 'data'),
      Input('revenue-type', 'data'),
-     Input('view-mode', 'data')]
+     Input('view-mode', 'data')],
+    prevent_initial_call=False
 )
 def update_main_content(current_tab, plot_type, site_name, price_type, revenue_type, view_mode):
+    # Set defaults to prevent None values
+    current_tab = current_tab or 'generation'
+    plot_type = plot_type or 'monthly-forecast'
+    price_type = price_type or 'da'
+    revenue_type = revenue_type or 'da'
+    view_mode = view_mode or 'forecast'
+    
     if not site_name and current_tab not in ['validation', 'portfolio']:
         return dbc.Alert("Please select a site to begin analysis", color="info", className="text-center")
     
@@ -870,7 +922,7 @@ def update_main_content(current_tab, plot_type, site_name, price_type, revenue_t
         return create_validation_content()
     
     if current_tab == 'data':
-        return create_data_view_content(plot_type or 'file-explorer', site_name)
+        return create_data_view_content(plot_type, site_name)
     
     if current_tab == 'portfolio':
         return create_portfolio_content()
@@ -1262,6 +1314,7 @@ def create_clean_layout(fig, title, xaxis_title, yaxis_title, showlegend=True):
     
     return fig
 
+@simple_cache(timeout=300)  # Cache for 5 minutes
 def create_daily_forecast(site_name, metric):
     """Create daily forecast plot with P10-P90 bands matching ipynb"""
     dist_file = dashboard.find_distribution_file(site_name, metric, 'daily')
@@ -1548,6 +1601,7 @@ def create_monthly_historical(site_name, metric):
     except Exception as e:
         return dbc.Alert(f"Error in monthly historical: {str(e)}", color="danger")
 
+@simple_cache(timeout=300)  # Cache for 5 minutes
 def create_monthly_forecast(site_name, metric):
     """Create monthly forecast plot with P10-P90 bands, paths, and historical average"""
     dist_file = dashboard.find_distribution_file(site_name, metric, 'monthly')
@@ -1579,11 +1633,11 @@ def create_monthly_forecast(site_name, metric):
         
         fig = go.Figure()
         
-        # Add paths if available (limit for performance)
+        # Add paths if available (limit to 10 for performance)
         if ts_file and Path(ts_file).exists():
             df_ts = pd.read_parquet(ts_file)
             path_cols = [col for col in df_ts.columns if col.startswith('path_')]
-            for i, path in enumerate(path_cols[:30]):  # Limit to 30 paths
+            for i, path in enumerate(path_cols[:10]):  # Reduced from 30 to 10 paths
                 fig.add_trace(go.Scatter(
                     x=x,
                     y=df_ts[path],
@@ -1686,6 +1740,7 @@ def create_monthly_forecast(site_name, metric):
     except Exception as e:
         return dbc.Alert(f"Error in monthly forecast: {str(e)}", color="danger")
 
+@simple_cache(timeout=300)  # Cache for 5 minutes
 def create_diurnal_pattern(site_name, metric):
     """Create diurnal pattern plot with P5-P95 band and historical average"""
     dist_file = dashboard.find_distribution_file(site_name, metric, 'hourly')
@@ -1953,6 +2008,7 @@ def create_duration_curve(site_name, metric):
     except Exception as e:
         return dbc.Alert(f"Error in duration curve: {str(e)}", color="danger")
 
+@simple_cache(timeout=600)  # Cache for 10 minutes
 def create_ghi_vs_generation_hour(site_name):
     """Create GHI vs Generation colored by hour"""
     hist_file = dashboard.find_historical_file(site_name)
@@ -1973,8 +2029,8 @@ def create_ghi_vs_generation_hour(site_name):
         if not complete_years:
             return dbc.Alert("No complete years of data available", color="warning", className="text-center")
         
-        # Use last 10 complete years
-        years_to_use = sorted(complete_years)[-10:]
+        # Use last 5 complete years (reduced from 10 for performance)
+        years_to_use = sorted(complete_years)[-5:]
         df_years = df[df['year'].isin(years_to_use)].copy()
         
         # Filter data
@@ -1984,9 +2040,9 @@ def create_ghi_vs_generation_hour(site_name):
         if len(df_filtered) < 100:
             return dbc.Alert("Insufficient data for analysis", color="warning", className="text-center")
         
-        # Sample data if too large
-        if len(df_filtered) > 10000:
-            df_filtered = df_filtered.sample(n=10000, random_state=42)
+        # Sample data more aggressively for performance
+        if len(df_filtered) > 5000:
+            df_filtered = df_filtered.sample(n=5000, random_state=42)
         
         fig = go.Figure()
         
@@ -2039,6 +2095,7 @@ def create_ghi_vs_generation_hour(site_name):
     except Exception as e:
         return dbc.Alert(f"Error in GHI vs generation (hour): {str(e)}", color="danger")
 
+@simple_cache(timeout=600)  # Cache for 10 minutes
 def create_ghi_vs_generation_temp(site_name):
     """Create GHI vs Generation colored by temperature"""
     hist_file = dashboard.find_historical_file(site_name)
@@ -2059,8 +2116,8 @@ def create_ghi_vs_generation_temp(site_name):
         if not complete_years:
             return dbc.Alert("No complete years of data available", color="warning", className="text-center")
         
-        # Use last 5 complete years
-        years_to_use = sorted(complete_years)[-5:]
+        # Use last 3 complete years (reduced from 5 for performance)
+        years_to_use = sorted(complete_years)[-3:]
         df_years = df[df['year'].isin(years_to_use)].copy()
         
         # Filter data
@@ -2070,9 +2127,9 @@ def create_ghi_vs_generation_temp(site_name):
         if len(df_filtered) < 100:
             return dbc.Alert("Insufficient data for analysis", color="warning", className="text-center")
         
-        # Sample data if too large
-        if len(df_filtered) > 10000:
-            df_filtered = df_filtered.sample(n=10000, random_state=42)
+        # Sample data more aggressively for performance
+        if len(df_filtered) > 3000:
+            df_filtered = df_filtered.sample(n=3000, random_state=42)
         
         fig = go.Figure()
         

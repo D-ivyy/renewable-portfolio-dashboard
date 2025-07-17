@@ -3,12 +3,14 @@ services:
     name: renewable-portfolio-dashboard
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:server
+    startCommand: gunicorn app:server --config gunicorn.conf.py
     envVars:
       - key: PYTHON_VERSION
         value: 3.9.18
       - key: DASH_DEBUG
-        value: False
+        value: false
+      - key: WEB_CONCURRENCY
+        value: 2
     scaling:
       minInstances: 1
-      maxInstances: 3 
+      maxInstances: 5 

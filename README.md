@@ -56,6 +56,35 @@ For production deployment, you can set these environment variables:
 - `DASH_DEBUG`: Set to `true` for debug mode (default: `false`)
 - `PORT`: Port number (default: `8050`)
 - `HOST`: Host address (default: `0.0.0.0`)
+- `WEB_CONCURRENCY`: Number of worker processes (default: `2`)
+- `MAX_DATA_POINTS`: Maximum data points for plots (default: `5000`)
+- `CACHE_TIMEOUT`: Cache timeout in seconds (default: `300`)
+
+### Performance Optimizations
+
+The application includes several performance optimizations for production:
+
+- **Caching**: Data loading functions cached for 5-10 minutes
+- **Data Sampling**: Large datasets automatically sampled to 5K points max
+- **Multiple Workers**: Gunicorn configured with 2 workers by default
+- **Memory Management**: Automatic cache cleanup and data reduction
+- **Optimized Callbacks**: Reduced unnecessary component updates
+
+### Troubleshooting Performance Issues
+
+If experiencing slow performance on Render:
+
+1. **Check the deployment guide**: See `DEPLOYMENT_FIXES.md` for detailed troubleshooting
+2. **Verify Gunicorn command**: Should be `gunicorn app:server --config gunicorn.conf.py`
+3. **Monitor response sizes**: Should be <50KB per request
+4. **Check resource usage**: CPU <50%, Memory <400MB
+
+For immediate performance issues, add these environment variables:
+```
+MAX_DATA_POINTS=2000
+WEB_CONCURRENCY=1
+CACHE_TIMEOUT=600
+```
 
 ### Data Structure
 
