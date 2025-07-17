@@ -10,8 +10,4 @@ services:
       - key: DASH_DEBUG
         value: false
       - key: WEB_CONCURRENCY
-        value: 2
-    scaling:
-      minInstances: 1
-      maxInstances: 5
-      targetCPUPercent: 70 
+        value: 1 
