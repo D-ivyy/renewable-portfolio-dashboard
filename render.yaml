@@ -13,4 +13,5 @@ services:
         value: 2
     scaling:
       minInstances: 1
-      maxInstances: 5 
+      maxInstances: 5
+      targetCPUPercent: 70 
