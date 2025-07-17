@@ -13,7 +13,6 @@ import base64
 import io
 import functools
 import time
-import os
 from typing import Optional, List, Dict, Any
 warnings.filterwarnings('ignore')
 
@@ -2020,15 +2019,6 @@ def create_ghi_vs_generation_hour(site_name):
         # Read parquet file instead of csv
         df = pd.read_parquet(hist_file)
         
-        # Check for required columns
-        required_cols = ['generation_mw', 'shortwave_radiation', 'hour', 'year']
-        missing_cols = [col for col in required_cols if col not in df.columns]
-        if missing_cols:
-            print(f"❌ Missing columns for GHI hour plot: {missing_cols}")
-            print(f"📋 Available columns: {list(df.columns)}")
-            return dbc.Alert(f"Missing required data columns: {', '.join(missing_cols)}", 
-                           color="warning", className="text-center")
-        
         # Parse dates and get complete years
         df['date'] = pd.to_datetime(df['datetime'] if 'datetime' in df.columns else 
                                   df[['year', 'month', 'day', 'hour']])
@@ -2039,21 +2029,20 @@ def create_ghi_vs_generation_hour(site_name):
         if not complete_years:
             return dbc.Alert("No complete years of data available", color="warning", className="text-center")
         
-        # Use last 10 complete years (restored for better data coverage)
-        years_to_use = sorted(complete_years)[-10:] if len(complete_years) >= 10 else complete_years
+        # Use last 5 complete years (reduced from 10 for performance)
+        years_to_use = sorted(complete_years)[-5:]
         df_years = df[df['year'].isin(years_to_use)].copy()
         
-        # Filter data (more lenient filtering)
-        df_filtered = df_years[(df_years['generation_mw'] > 0.01) & 
+        # Filter data
+        df_filtered = df_years[(df_years['generation_mw'] > 0.1) & 
                               (df_years['shortwave_radiation'] > 0)].copy()
         
         if len(df_filtered) < 100:
             return dbc.Alert("Insufficient data for analysis", color="warning", className="text-center")
         
-        # Sample data for performance but keep more points for scatter plots
-        max_points = int(os.environ.get('MAX_DATA_POINTS', '5000'))
-        if len(df_filtered) > max_points * 2:  # Allow double for scatter plots
-            df_filtered = df_filtered.sample(n=max_points * 2, random_state=42)
+        # Sample data more aggressively for performance
+        if len(df_filtered) > 5000:
+            df_filtered = df_filtered.sample(n=5000, random_state=42)
         
         fig = go.Figure()
         
@@ -2067,7 +2056,6 @@ def create_ghi_vs_generation_hour(site_name):
                 colorscale='Viridis',
                 colorbar=dict(
                     title="Hour of Day",
-                    titleside="right",
                     tickmode="linear",
                     tick0=0,
                     dtick=4
@@ -2117,15 +2105,6 @@ def create_ghi_vs_generation_temp(site_name):
         # Read parquet file instead of csv
         df = pd.read_parquet(hist_file)
         
-        # Check for required columns
-        required_cols = ['generation_mw', 'shortwave_radiation', 'temperature_2m', 'hour', 'year']
-        missing_cols = [col for col in required_cols if col not in df.columns]
-        if missing_cols:
-            print(f"❌ Missing columns for GHI temp plot: {missing_cols}")
-            print(f"📋 Available columns: {list(df.columns)}")
-            return dbc.Alert(f"Missing required data columns: {', '.join(missing_cols)}", 
-                           color="warning", className="text-center")
-        
         # Parse dates and get complete years
         df['date'] = pd.to_datetime(df['datetime'] if 'datetime' in df.columns else 
                                   df[['year', 'month', 'day', 'hour']])
@@ -2136,21 +2115,20 @@ def create_ghi_vs_generation_temp(site_name):
         if not complete_years:
             return dbc.Alert("No complete years of data available", color="warning", className="text-center")
         
-        # Use last 5 complete years (restored for better data coverage)
-        years_to_use = sorted(complete_years)[-5:] if len(complete_years) >= 5 else complete_years
+        # Use last 3 complete years (reduced from 5 for performance)
+        years_to_use = sorted(complete_years)[-3:]
         df_years = df[df['year'].isin(years_to_use)].copy()
         
-        # Filter data (more lenient filtering)
-        df_filtered = df_years[(df_years['generation_mw'] > 0.01) & 
+        # Filter data
+        df_filtered = df_years[(df_years['generation_mw'] > 0.1) & 
                               (df_years['shortwave_radiation'] > 0)].copy()
         
         if len(df_filtered) < 100:
             return dbc.Alert("Insufficient data for analysis", color="warning", className="text-center")
         
-        # Sample data for performance but keep more points for scatter plots
-        max_points = int(os.environ.get('MAX_DATA_POINTS', '5000'))
-        if len(df_filtered) > max_points * 1.5:  # Allow 1.5x for temp scatter plots
-            df_filtered = df_filtered.sample(n=int(max_points * 1.5), random_state=42)
+        # Sample data more aggressively for performance
+        if len(df_filtered) > 3000:
+            df_filtered = df_filtered.sample(n=3000, random_state=42)
         
         fig = go.Figure()
         
@@ -2163,8 +2141,7 @@ def create_ghi_vs_generation_temp(site_name):
                 color=df_filtered['temperature_2m'],
                 colorscale='RdBu_r',
                 colorbar=dict(
-                    title="Temperature (°C)",
-                    titleside="right"
+                    title="Temperature (°C)"
                 ),
                 opacity=0.7
             ),
