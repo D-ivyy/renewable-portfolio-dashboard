@@ -1,0 +1,2 @@
+Renewable[[:space:]]Portfolio[[:space:]]LLC_parquet/** filter=lfs diff=lfs merge=lfs -text
+Renewable[[:space:]]Portfolio[[:space:]]LLC_parquet filter=lfs diff=lfs merge=lfs -text
