@@ -85,8 +85,49 @@ COLORS = {
     'border': '#dee2e6'
 }
 
+# Solar and Wind specific colors
+RENEWABLE_COLORS = {
+    'solar': {
+        'gradient': 'linear-gradient(135deg, #f39c12 0%, #f1c40f 100%)',  # Orange to Yellow
+        'icon': 'fas fa-sun',
+        'primary': '#f39c12'
+    },
+    'wind': {
+        'gradient': 'linear-gradient(135deg, #3498db 0%, #2980b9 100%)',  # Light to Dark Blue
+        'icon': 'fas fa-wind',
+        'primary': '#3498db'
+    }
+}
+
 MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
                'July', 'August', 'September', 'October', 'November', 'December']
+
+def classify_renewable_type(site_name: str) -> str:
+    """Classify site as Solar or Wind based on name - if name doesn't contain 'wind' then it's solar"""
+    return 'wind' if 'wind' in site_name.lower() else 'solar'
+
+def get_sites_by_type(renewable_type: str) -> List[str]:
+    """Get all sites filtered by renewable type (Solar or Wind)"""
+    all_sites = dashboard.get_all_sites()
+    return [site for site in all_sites if classify_renewable_type(site) == renewable_type.lower()]
+
+def get_header_style(renewable_type: str) -> dict:
+    """Get header style based on renewable type"""
+    base_style = {
+        'color': 'white',
+        'padding': '2rem 0',
+        'marginBottom': '2rem',
+        'boxShadow': '0 4px 6px rgba(0,0,0,0.1)'
+    }
+    
+    if renewable_type.lower() == 'solar':
+        base_style['background'] = RENEWABLE_COLORS['solar']['gradient']
+    elif renewable_type.lower() == 'wind':
+        base_style['background'] = RENEWABLE_COLORS['wind']['gradient']
+    else:
+        base_style['background'] = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+    
+    return base_style
 
 class RenewablePortfolioDashboard:
     """Dashboard for Renewable Portfolio LLC - Optimized for performance with Parquet files
@@ -356,25 +397,50 @@ nav_card_active_style = {
 # Create layout with improved structure and design
 app.layout = html.Div([
     
-    # Header with gradient background
-    html.Div([
+    # Dynamic Header with gradient background
+    html.Div(id='dynamic-header', children=[
         dbc.Container([
             dbc.Row([
                 dbc.Col([
-                    html.H3([
-                        html.I(className="fas fa-solar-panel me-2"),
-                        "Renewable Portfolio Analytics"
+                    html.H3(id='header-title', children=[
+                        html.I(id='header-icon', className="fas fa-solar-panel me-2"),
+                        html.Span(id='header-text', children="Renewable Portfolio Analytics")
                     ], className="text-center mb-0", 
                        style={'font-weight': '600', 'letter-spacing': '-0.3px'})
                 ])
             ])
         ])
-    ], style={**header_style, 'padding': '1rem 0'}),
+    ], style={'padding': '1rem 0'}),
     
     dbc.Container([
         dbc.Row([
             # Left sidebar for navigation
             dbc.Col([
+                # Renewable Type Selection Card
+                dbc.Card([
+                    dbc.CardBody([
+                        html.Label("Renewable Energy Type", 
+                                  className="fw-bold mb-2", 
+                                  style={'color': COLORS['text']}),
+                        dbc.Row([
+                            dbc.Col([
+                                dbc.Button([
+                                    html.I(className="fas fa-sun me-2"),
+                                    "Solar"
+                                ], id="solar-type-btn", color="warning", 
+                                   outline=False, size="sm", className="w-100")
+                            ], width=6),
+                            dbc.Col([
+                                dbc.Button([
+                                    html.I(className="fas fa-wind me-2"),
+                                    "Wind"
+                                ], id="wind-type-btn", color="primary", 
+                                   outline=True, size="sm", className="w-100")
+                            ], width=6)
+                        ])
+                    ])
+                ], className="shadow-sm mb-3", style={'border': 'none', 'border-radius': '12px'}),
+                
                 # Site Selection Card
                 dbc.Card([
                     dbc.CardBody([
@@ -383,9 +449,8 @@ app.layout = html.Div([
                                   style={'color': COLORS['text']}),
                         dcc.Dropdown(
                             id='site-dropdown',
-                            options=[{'label': dashboard.clean_site_name(site), 'value': site} 
-                                    for site in dashboard.get_all_sites()],
-                            value=dashboard.get_all_sites()[0] if dashboard.get_all_sites() else None,
+                            options=[],
+                            value=None,
                             style={'font-size': '14px'},
                             className="shadow-sm",
                             placeholder="Select a site..."
@@ -486,6 +551,7 @@ app.layout = html.Div([
     dcc.Store(id='price-type', data='da'),
     dcc.Store(id='revenue-type', data='da'),
     dcc.Store(id='view-mode', data='forecast'),  # 'forecast' or 'historical'
+    dcc.Store(id='renewable-type', data='solar'),  # 'solar' or 'wind'
     
     # Suggestion Box (floating)
     html.Div([
@@ -576,18 +642,100 @@ app.layout = html.Div([
     
 ], style={'backgroundColor': '#f0f2f5', 'min-height': '100vh'})
 
+# Callback for renewable type selection
+@app.callback(
+    [Output('solar-type-btn', 'outline'),
+     Output('wind-type-btn', 'outline'),
+     Output('renewable-type', 'data')],
+    [Input('solar-type-btn', 'n_clicks'),
+     Input('wind-type-btn', 'n_clicks')],
+    State('renewable-type', 'data'),
+    prevent_initial_call=False
+)
+def handle_renewable_type_selection(solar_clicks, wind_clicks, current_type):
+    triggered = ctx.triggered_id
+    
+    if triggered == 'solar-type-btn':
+        return False, True, 'solar'  # Solar active, Wind outlined
+    elif triggered == 'wind-type-btn':
+        return True, False, 'wind'   # Solar outlined, Wind active
+    else:
+        # Default to solar
+        return False, True, current_type or 'solar'
+
+# Callback for dynamic header update
+@app.callback(
+    [Output('dynamic-header', 'style'),
+     Output('header-icon', 'className'),
+     Output('header-text', 'children')],
+    Input('renewable-type', 'data')
+)
+def update_header(renewable_type):
+    renewable_type = renewable_type or 'solar'
+    
+    header_style = get_header_style(renewable_type)
+    
+    if renewable_type == 'solar':
+        icon_class = "fas fa-sun me-2"
+        text = "Solar Portfolio Analytics"
+    elif renewable_type == 'wind':
+        icon_class = "fas fa-wind me-2"
+        text = "Wind Portfolio Analytics"
+    else:
+        icon_class = "fas fa-solar-panel me-2"
+        text = "Renewable Portfolio Analytics"
+    
+    return header_style, icon_class, text
+
+# Callback for site dropdown update based on renewable type
+@app.callback(
+    [Output('site-dropdown', 'options'),
+     Output('site-dropdown', 'value')],
+    Input('renewable-type', 'data')
+)
+def update_site_dropdown(renewable_type):
+    renewable_type = renewable_type or 'solar'
+    
+    filtered_sites = get_sites_by_type(renewable_type)
+    options = [{'label': dashboard.clean_site_name(site), 'value': site} 
+               for site in filtered_sites]
+    
+    # Set first site as default if available
+    default_value = filtered_sites[0] if filtered_sites else None
+    
+    return options, default_value
+
+# Callback for suggestion button color (to avoid blending with background)
+@app.callback(
+    Output('suggestion-btn', 'color'),
+    Input('renewable-type', 'data')
+)
+def update_suggestion_button_color(renewable_type):
+    renewable_type = renewable_type or 'solar'
+    
+    # Use contrasting colors: orange for wind (blue bg), blue for solar (orange bg)
+    if renewable_type == 'wind':
+        return 'warning'  # Orange button for blue wind background
+    else:
+        return 'primary'  # Blue button for orange solar background
+
 # Callback for quick stats
 @app.callback(
     Output('quick-stats', 'children'),
-    Input('site-dropdown', 'value')
+    [Input('site-dropdown', 'value'),
+     Input('renewable-type', 'data')]
 )
-def update_quick_stats(site_name):
+def update_quick_stats(site_name, renewable_type):
+    renewable_type = renewable_type or 'solar'
+    
     if not site_name:
-        return "No site selected"
+        total_sites = len(get_sites_by_type(renewable_type))
+        return f"No site selected • {total_sites} {renewable_type} sites available"
     
-    total_sites = len(dashboard.get_all_sites())
+    total_sites = len(get_sites_by_type(renewable_type))
+    site_type = classify_renewable_type(site_name).title()
     
-    return f"{total_sites} sites available"
+    return f"{site_type} Site • {total_sites} {renewable_type} sites available"
 
 # Callback for navigation card clicks
 @app.callback(
